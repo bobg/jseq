@@ -1,5 +1,3 @@
-//go:build go1.26 || (go1.25 && goexperiment.jsonv2)
-
 package jseq_test
 
 import (
@@ -15,7 +13,7 @@ func Example() {
 	tokens, errptr1 := jseq.Tokens(r)
 	values, errptr2 := jseq.Values(tokens)
 	for pointer, value := range values {
-		fmt.Printf("%q: %v\n", pointer, value)
+		fmt.Printf("%q: %v\n", pointer.Text(), value)
 	}
 	if err := errors.Join(*errptr1, *errptr2); err != nil {
 		panic(err)

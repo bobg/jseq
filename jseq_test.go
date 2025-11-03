@@ -1,5 +1,3 @@
-//go:build go1.26 || (go1.25 && goexperiment.jsonv2)
-
 package jseq_test
 
 import (
@@ -35,7 +33,7 @@ func TestValues(t *testing.T) {
 			wantVal     = expectJSON[n].v
 		)
 
-		if pointer != wantPointer {
+		if !reflect.DeepEqual(pointer, wantPointer) {
 			t.Errorf("got pointer %q, want %q", pointer, wantPointer)
 		}
 		if !reflect.DeepEqual(val, wantVal) {
@@ -56,79 +54,109 @@ func TestValues(t *testing.T) {
 	}
 }
 
+func TestPointer(t *testing.T) {
+	val := map[string]any{
+		"hello": map[string]any{
+			"spanish": []any{"hola", "buenos dias"},
+			"italian": []any{"salve", "buongiorno"},
+		},
+		"world": map[string]any{
+			"spanish": []any{"mundo"},
+			"italian": []any{"mondo"},
+		},
+	}
+
+	var (
+		p        = jseq.Pointer{"hello", "italian", 1}
+		gotText  = p.Text()
+		wantText = jsontext.Pointer("/hello/italian/1")
+	)
+	if gotText != wantText {
+		t.Errorf("got jsontext.Pointer %s, want %s", gotText, wantText)
+	}
+
+	got, err := p.Locate(val)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "buongiorno" {
+		t.Errorf("got %v, want buongiorno", got)
+	}
+}
+
 var expectJSON = []struct {
-	p jsontext.Pointer
+	p jseq.Pointer
 	v any
 }{{
-	"/0", true,
+	jseq.Pointer{0}, true,
 }, {
-	"/1", false,
+	jseq.Pointer{1}, false,
 }, {
-	"/2", jseq.Null{},
+	jseq.Pointer{2}, jseq.Null{},
 }, {
-	"/3", map[string]any{},
+	jseq.Pointer{3}, map[string]any{},
 }, {
-	"/4", []any(nil),
+	jseq.Pointer{4}, []any(nil),
 }, {
-	"", []any{true, false, jseq.Null{}, map[string]any{}, []any(nil)},
+	nil, []any{true, false, jseq.Null{}, map[string]any{}, []any(nil)},
 }, {
-	"", "Remaining samples courtesy of Adobe: https://opensource.adobe.com/Spry/samples/data_region/JSONDataSetSample.html",
+	nil, "Remaining samples courtesy of Adobe: https://opensource.adobe.com/Spry/samples/data_region/JSONDataSetSample.html",
 }, {
-	"/0", int64(100),
+	jseq.Pointer{0}, jseq.Int(100),
 }, {
-	"/1", int64(500),
+	jseq.Pointer{1}, jseq.Int(500),
 }, {
-	"/2", int64(300),
+	jseq.Pointer{2}, jseq.Int(300),
 }, {
-	"/3", int64(200),
+	jseq.Pointer{3}, jseq.Int(200),
 }, {
-	"/4", int64(400),
+	jseq.Pointer{4}, jseq.Int(400),
 }, {
-	"", []any{int64(100), int64(500), int64(300), int64(200), int64(400)},
+	nil, []any{jseq.Int(100), jseq.Int(500), jseq.Int(300), jseq.Int(200), jseq.Int(400)},
 }, {
-	"/0/color", "red",
+	jseq.Pointer{0, "color"}, "red",
 }, {
-	"/0/value", "#f00",
+	jseq.Pointer{0, "value"}, "#f00",
 }, {
-	"/0", map[string]any{"color": "red", "value": "#f00"},
+	jseq.Pointer{0}, map[string]any{"color": "red", "value": "#f00"},
 }, {
-	"/1/color", "green",
+	jseq.Pointer{1, "color"}, "green",
 }, {
-	"/1/value", "#0f0",
+	jseq.Pointer{1, "value"}, "#0f0",
 }, {
-	"/1", map[string]any{"color": "green", "value": "#0f0"},
+	jseq.Pointer{1}, map[string]any{"color": "green", "value": "#0f0"},
 }, {
-	"/2/color", "blue",
+	jseq.Pointer{2, "color"}, "blue",
 }, {
-	"/2/value", "#00f",
+	jseq.Pointer{2, "value"}, "#00f",
 }, {
-	"/2", map[string]any{"color": "blue", "value": "#00f"},
+	jseq.Pointer{2}, map[string]any{"color": "blue", "value": "#00f"},
 }, {
-	"/3/color", "cyan",
+	jseq.Pointer{3, "color"}, "cyan",
 }, {
-	"/3/value", "#0ff",
+	jseq.Pointer{3, "value"}, "#0ff",
 }, {
-	"/3", map[string]any{"color": "cyan", "value": "#0ff"},
+	jseq.Pointer{3}, map[string]any{"color": "cyan", "value": "#0ff"},
 }, {
-	"/4/color", "magenta",
+	jseq.Pointer{4, "color"}, "magenta",
 }, {
-	"/4/value", "#f0f",
+	jseq.Pointer{4, "value"}, "#f0f",
 }, {
-	"/4", map[string]any{"color": "magenta", "value": "#f0f"},
+	jseq.Pointer{4}, map[string]any{"color": "magenta", "value": "#f0f"},
 }, {
-	"/5/color", "yellow",
+	jseq.Pointer{5, "color"}, "yellow",
 }, {
-	"/5/value", "#ff0",
+	jseq.Pointer{5, "value"}, "#ff0",
 }, {
-	"/5", map[string]any{"color": "yellow", "value": "#ff0"},
+	jseq.Pointer{5}, map[string]any{"color": "yellow", "value": "#ff0"},
 }, {
-	"/6/color", "black",
+	jseq.Pointer{6, "color"}, "black",
 }, {
-	"/6/value", "#000",
+	jseq.Pointer{6, "value"}, "#000",
 }, {
-	"/6", map[string]any{"color": "black", "value": "#000"},
+	jseq.Pointer{6}, map[string]any{"color": "black", "value": "#000"},
 }, {
-	"", []any{
+	nil, []any{
 		map[string]any{"color": "red", "value": "#f00"},
 		map[string]any{"color": "green", "value": "#0f0"},
 		map[string]any{"color": "blue", "value": "#00f"},
@@ -138,52 +166,52 @@ var expectJSON = []struct {
 		map[string]any{"color": "black", "value": "#000"},
 	},
 }, {
-	"/color", "red",
+	jseq.Pointer{"color"}, "red",
 }, {
-	"/value", "#f00",
+	jseq.Pointer{"value"}, "#f00",
 }, {
-	"", map[string]any{"color": "red", "value": "#f00"},
+	nil, map[string]any{"color": "red", "value": "#f00"},
 }, {
-	"/id", "0001",
+	jseq.Pointer{"id"}, "0001",
 }, {
-	"/type", "donut",
+	jseq.Pointer{"type"}, "donut",
 }, {
-	"/name", "Cake",
+	jseq.Pointer{"name"}, "Cake",
 }, {
-	"/ppu", 0.55,
+	jseq.Pointer{"ppu"}, jseq.Float(0.55),
 }, {
-	"/batters/batter/0/id", "1001",
+	jseq.Pointer{"batters", "batter", 0, "id"}, "1001",
 }, {
-	"/batters/batter/0/type", "Regular",
+	jseq.Pointer{"batters", "batter", 0, "type"}, "Regular",
 }, {
-	"/batters/batter/0", map[string]any{"id": "1001", "type": "Regular"},
+	jseq.Pointer{"batters", "batter", 0}, map[string]any{"id": "1001", "type": "Regular"},
 }, {
-	"/batters/batter/1/id", "1002",
+	jseq.Pointer{"batters", "batter", 1, "id"}, "1002",
 }, {
-	"/batters/batter/1/type", "Chocolate",
+	jseq.Pointer{"batters", "batter", 1, "type"}, "Chocolate",
 }, {
-	"/batters/batter/1", map[string]any{"id": "1002", "type": "Chocolate"},
+	jseq.Pointer{"batters", "batter", 1}, map[string]any{"id": "1002", "type": "Chocolate"},
 }, {
-	"/batters/batter/2/id", "1003",
+	jseq.Pointer{"batters", "batter", 2, "id"}, "1003",
 }, {
-	"/batters/batter/2/type", "Blueberry",
+	jseq.Pointer{"batters", "batter", 2, "type"}, "Blueberry",
 }, {
-	"/batters/batter/2", map[string]any{"id": "1003", "type": "Blueberry"},
+	jseq.Pointer{"batters", "batter", 2}, map[string]any{"id": "1003", "type": "Blueberry"},
 }, {
-	"/batters/batter/3/id", "1004",
+	jseq.Pointer{"batters", "batter", 3, "id"}, "1004",
 }, {
-	"/batters/batter/3/type", "Devil's Food",
+	jseq.Pointer{"batters", "batter", 3, "type"}, "Devil's Food",
 }, {
-	"/batters/batter/3", map[string]any{"id": "1004", "type": "Devil's Food"},
+	jseq.Pointer{"batters", "batter", 3}, map[string]any{"id": "1004", "type": "Devil's Food"},
 }, {
-	"/batters/batter", []any{
+	jseq.Pointer{"batters", "batter"}, []any{
 		map[string]any{"id": "1001", "type": "Regular"},
 		map[string]any{"id": "1002", "type": "Chocolate"},
 		map[string]any{"id": "1003", "type": "Blueberry"},
 		map[string]any{"id": "1004", "type": "Devil's Food"},
 	},
 }, {
-	"/batters", map[string]any{
+	jseq.Pointer{"batters"}, map[string]any{
 		"batter": []any{
 			map[string]any{"id": "1001", "type": "Regular"},
 			map[string]any{"id": "1002", "type": "Chocolate"},
@@ -192,49 +220,49 @@ var expectJSON = []struct {
 		},
 	},
 }, {
-	"/topping/0/id", "5001",
+	jseq.Pointer{"topping", 0, "id"}, "5001",
 }, {
-	"/topping/0/type", "None",
+	jseq.Pointer{"topping", 0, "type"}, "None",
 }, {
-	"/topping/0", map[string]any{"id": "5001", "type": "None"},
+	jseq.Pointer{"topping", 0}, map[string]any{"id": "5001", "type": "None"},
 }, {
-	"/topping/1/id", "5002",
+	jseq.Pointer{"topping", 1, "id"}, "5002",
 }, {
-	"/topping/1/type", "Glazed",
+	jseq.Pointer{"topping", 1, "type"}, "Glazed",
 }, {
-	"/topping/1", map[string]any{"id": "5002", "type": "Glazed"},
+	jseq.Pointer{"topping", 1}, map[string]any{"id": "5002", "type": "Glazed"},
 }, {
-	"/topping/2/id", "5005",
+	jseq.Pointer{"topping", 2, "id"}, "5005",
 }, {
-	"/topping/2/type", "Sugar",
+	jseq.Pointer{"topping", 2, "type"}, "Sugar",
 }, {
-	"/topping/2", map[string]any{"id": "5005", "type": "Sugar"},
+	jseq.Pointer{"topping", 2}, map[string]any{"id": "5005", "type": "Sugar"},
 }, {
-	"/topping/3/id", "5007",
+	jseq.Pointer{"topping", 3, "id"}, "5007",
 }, {
-	"/topping/3/type", "Powdered Sugar",
+	jseq.Pointer{"topping", 3, "type"}, "Powdered Sugar",
 }, {
-	"/topping/3", map[string]any{"id": "5007", "type": "Powdered Sugar"},
+	jseq.Pointer{"topping", 3}, map[string]any{"id": "5007", "type": "Powdered Sugar"},
 }, {
-	"/topping/4/id", "5006",
+	jseq.Pointer{"topping", 4, "id"}, "5006",
 }, {
-	"/topping/4/type", "Chocolate with Sprinkles",
+	jseq.Pointer{"topping", 4, "type"}, "Chocolate with Sprinkles",
 }, {
-	"/topping/4", map[string]any{"id": "5006", "type": "Chocolate with Sprinkles"},
+	jseq.Pointer{"topping", 4}, map[string]any{"id": "5006", "type": "Chocolate with Sprinkles"},
 }, {
-	"/topping/5/id", "5003",
+	jseq.Pointer{"topping", 5, "id"}, "5003",
 }, {
-	"/topping/5/type", "Chocolate",
+	jseq.Pointer{"topping", 5, "type"}, "Chocolate",
 }, {
-	"/topping/5", map[string]any{"id": "5003", "type": "Chocolate"},
+	jseq.Pointer{"topping", 5}, map[string]any{"id": "5003", "type": "Chocolate"},
 }, {
-	"/topping/6/id", "5004",
+	jseq.Pointer{"topping", 6, "id"}, "5004",
 }, {
-	"/topping/6/type", "Maple",
+	jseq.Pointer{"topping", 6, "type"}, "Maple",
 }, {
-	"/topping/6", map[string]any{"id": "5004", "type": "Maple"},
+	jseq.Pointer{"topping", 6}, map[string]any{"id": "5004", "type": "Maple"},
 }, {
-	"/topping", []any{
+	jseq.Pointer{"topping"}, []any{
 		map[string]any{"id": "5001", "type": "None"},
 		map[string]any{"id": "5002", "type": "Glazed"},
 		map[string]any{"id": "5005", "type": "Sugar"},
@@ -244,11 +272,11 @@ var expectJSON = []struct {
 		map[string]any{"id": "5004", "type": "Maple"},
 	},
 }, {
-	"", map[string]any{
+	nil, map[string]any{
 		"id":   "0001",
 		"type": "donut",
 		"name": "Cake",
-		"ppu":  0.55,
+		"ppu":  jseq.Float(0.55),
 		"batters": map[string]any{
 			"batter": []any{
 				map[string]any{"id": "1001", "type": "Regular"},
@@ -268,46 +296,46 @@ var expectJSON = []struct {
 		},
 	},
 }, {
-	"/0/id", "0001",
+	jseq.Pointer{0, "id"}, "0001",
 }, {
-	"/0/type", "donut",
+	jseq.Pointer{0, "type"}, "donut",
 }, {
-	"/0/name", "Cake",
+	jseq.Pointer{0, "name"}, "Cake",
 }, {
-	"/0/ppu", 0.55,
+	jseq.Pointer{0, "ppu"}, jseq.Float(0.55),
 }, {
-	"/0/batters/batter/0/id", "1001",
+	jseq.Pointer{0, "batters", "batter", 0, "id"}, "1001",
 }, {
-	"/0/batters/batter/0/type", "Regular",
+	jseq.Pointer{0, "batters", "batter", 0, "type"}, "Regular",
 }, {
-	"/0/batters/batter/0", map[string]any{"id": "1001", "type": "Regular"},
+	jseq.Pointer{0, "batters", "batter", 0}, map[string]any{"id": "1001", "type": "Regular"},
 }, {
-	"/0/batters/batter/1/id", "1002",
+	jseq.Pointer{0, "batters", "batter", 1, "id"}, "1002",
 }, {
-	"/0/batters/batter/1/type", "Chocolate",
+	jseq.Pointer{0, "batters", "batter", 1, "type"}, "Chocolate",
 }, {
-	"/0/batters/batter/1", map[string]any{"id": "1002", "type": "Chocolate"},
+	jseq.Pointer{0, "batters", "batter", 1}, map[string]any{"id": "1002", "type": "Chocolate"},
 }, {
-	"/0/batters/batter/2/id", "1003",
+	jseq.Pointer{0, "batters", "batter", 2, "id"}, "1003",
 }, {
-	"/0/batters/batter/2/type", "Blueberry",
+	jseq.Pointer{0, "batters", "batter", 2, "type"}, "Blueberry",
 }, {
-	"/0/batters/batter/2", map[string]any{"id": "1003", "type": "Blueberry"},
+	jseq.Pointer{0, "batters", "batter", 2}, map[string]any{"id": "1003", "type": "Blueberry"},
 }, {
-	"/0/batters/batter/3/id", "1004",
+	jseq.Pointer{0, "batters", "batter", 3, "id"}, "1004",
 }, {
-	"/0/batters/batter/3/type", "Devil's Food",
+	jseq.Pointer{0, "batters", "batter", 3, "type"}, "Devil's Food",
 }, {
-	"/0/batters/batter/3", map[string]any{"id": "1004", "type": "Devil's Food"},
+	jseq.Pointer{0, "batters", "batter", 3}, map[string]any{"id": "1004", "type": "Devil's Food"},
 }, {
-	"/0/batters/batter", []any{
+	jseq.Pointer{0, "batters", "batter"}, []any{
 		map[string]any{"id": "1001", "type": "Regular"},
 		map[string]any{"id": "1002", "type": "Chocolate"},
 		map[string]any{"id": "1003", "type": "Blueberry"},
 		map[string]any{"id": "1004", "type": "Devil's Food"},
 	},
 }, {
-	"/0/batters", map[string]any{
+	jseq.Pointer{0, "batters"}, map[string]any{
 		"batter": []any{
 			map[string]any{"id": "1001", "type": "Regular"},
 			map[string]any{"id": "1002", "type": "Chocolate"},
@@ -316,49 +344,49 @@ var expectJSON = []struct {
 		},
 	},
 }, {
-	"/0/topping/0/id", "5001",
+	jseq.Pointer{0, "topping", 0, "id"}, "5001",
 }, {
-	"/0/topping/0/type", "None",
+	jseq.Pointer{0, "topping", 0, "type"}, "None",
 }, {
-	"/0/topping/0", map[string]any{"id": "5001", "type": "None"},
+	jseq.Pointer{0, "topping", 0}, map[string]any{"id": "5001", "type": "None"},
 }, {
-	"/0/topping/1/id", "5002",
+	jseq.Pointer{0, "topping", 1, "id"}, "5002",
 }, {
-	"/0/topping/1/type", "Glazed",
+	jseq.Pointer{0, "topping", 1, "type"}, "Glazed",
 }, {
-	"/0/topping/1", map[string]any{"id": "5002", "type": "Glazed"},
+	jseq.Pointer{0, "topping", 1}, map[string]any{"id": "5002", "type": "Glazed"},
 }, {
-	"/0/topping/2/id", "5005",
+	jseq.Pointer{0, "topping", 2, "id"}, "5005",
 }, {
-	"/0/topping/2/type", "Sugar",
+	jseq.Pointer{0, "topping", 2, "type"}, "Sugar",
 }, {
-	"/0/topping/2", map[string]any{"id": "5005", "type": "Sugar"},
+	jseq.Pointer{0, "topping", 2}, map[string]any{"id": "5005", "type": "Sugar"},
 }, {
-	"/0/topping/3/id", "5007",
+	jseq.Pointer{0, "topping", 3, "id"}, "5007",
 }, {
-	"/0/topping/3/type", "Powdered Sugar",
+	jseq.Pointer{0, "topping", 3, "type"}, "Powdered Sugar",
 }, {
-	"/0/topping/3", map[string]any{"id": "5007", "type": "Powdered Sugar"},
+	jseq.Pointer{0, "topping", 3}, map[string]any{"id": "5007", "type": "Powdered Sugar"},
 }, {
-	"/0/topping/4/id", "5006",
+	jseq.Pointer{0, "topping", 4, "id"}, "5006",
 }, {
-	"/0/topping/4/type", "Chocolate with Sprinkles",
+	jseq.Pointer{0, "topping", 4, "type"}, "Chocolate with Sprinkles",
 }, {
-	"/0/topping/4", map[string]any{"id": "5006", "type": "Chocolate with Sprinkles"},
+	jseq.Pointer{0, "topping", 4}, map[string]any{"id": "5006", "type": "Chocolate with Sprinkles"},
 }, {
-	"/0/topping/5/id", "5003",
+	jseq.Pointer{0, "topping", 5, "id"}, "5003",
 }, {
-	"/0/topping/5/type", "Chocolate",
+	jseq.Pointer{0, "topping", 5, "type"}, "Chocolate",
 }, {
-	"/0/topping/5", map[string]any{"id": "5003", "type": "Chocolate"},
+	jseq.Pointer{0, "topping", 5}, map[string]any{"id": "5003", "type": "Chocolate"},
 }, {
-	"/0/topping/6/id", "5004",
+	jseq.Pointer{0, "topping", 6, "id"}, "5004",
 }, {
-	"/0/topping/6/type", "Maple",
+	jseq.Pointer{0, "topping", 6, "type"}, "Maple",
 }, {
-	"/0/topping/6", map[string]any{"id": "5004", "type": "Maple"},
+	jseq.Pointer{0, "topping", 6}, map[string]any{"id": "5004", "type": "Maple"},
 }, {
-	"/0/topping", []any{
+	jseq.Pointer{0, "topping"}, []any{
 		map[string]any{"id": "5001", "type": "None"},
 		map[string]any{"id": "5002", "type": "Glazed"},
 		map[string]any{"id": "5005", "type": "Sugar"},
@@ -368,7 +396,7 @@ var expectJSON = []struct {
 		map[string]any{"id": "5004", "type": "Maple"},
 	},
 }, {
-	"/0", map[string]any{
+	jseq.Pointer{0}, map[string]any{
 		"batters": map[string]any{
 			"batter": []any{
 				map[string]any{
@@ -391,7 +419,7 @@ var expectJSON = []struct {
 		},
 		"id":   "0001",
 		"name": "Cake",
-		"ppu":  0.55,
+		"ppu":  jseq.Float(0.55),
 		"topping": []any{
 			map[string]any{
 				"id":   "5001",
@@ -425,31 +453,31 @@ var expectJSON = []struct {
 		"type": "donut",
 	},
 }, {
-	"/1/id", "0002",
+	jseq.Pointer{1, "id"}, "0002",
 }, {
-	"/1/type", "donut",
+	jseq.Pointer{1, "type"}, "donut",
 }, {
-	"/1/name", "Raised",
+	jseq.Pointer{1, "name"}, "Raised",
 }, {
-	"/1/ppu", 0.55,
+	jseq.Pointer{1, "ppu"}, jseq.Float(0.55),
 }, {
-	"/1/batters/batter/0/id", "1001",
+	jseq.Pointer{1, "batters", "batter", 0, "id"}, "1001",
 }, {
-	"/1/batters/batter/0/type", "Regular",
+	jseq.Pointer{1, "batters", "batter", 0, "type"}, "Regular",
 }, {
-	"/1/batters/batter/0", map[string]any{
+	jseq.Pointer{1, "batters", "batter", 0}, map[string]any{
 		"id":   "1001",
 		"type": "Regular",
 	},
 }, {
-	"/1/batters/batter", []any{
+	jseq.Pointer{1, "batters", "batter"}, []any{
 		map[string]any{
 			"id":   "1001",
 			"type": "Regular",
 		},
 	},
 }, {
-	"/1/batters", map[string]any{
+	jseq.Pointer{1, "batters"}, map[string]any{
 		"batter": []any{
 			map[string]any{
 				"id":   "1001",
@@ -458,52 +486,52 @@ var expectJSON = []struct {
 		},
 	},
 }, {
-	"/1/topping/0/id", "5001",
+	jseq.Pointer{1, "topping", 0, "id"}, "5001",
 }, {
-	"/1/topping/0/type", "None",
+	jseq.Pointer{1, "topping", 0, "type"}, "None",
 }, {
-	"/1/topping/0", map[string]any{
+	jseq.Pointer{1, "topping", 0}, map[string]any{
 		"id":   "5001",
 		"type": "None",
 	},
 }, {
-	"/1/topping/1/id", "5002",
+	jseq.Pointer{1, "topping", 1, "id"}, "5002",
 }, {
-	"/1/topping/1/type", "Glazed",
+	jseq.Pointer{1, "topping", 1, "type"}, "Glazed",
 }, {
-	"/1/topping/1", map[string]any{
+	jseq.Pointer{1, "topping", 1}, map[string]any{
 		"id":   "5002",
 		"type": "Glazed",
 	},
 }, {
-	"/1/topping/2/id", "5005",
+	jseq.Pointer{1, "topping", 2, "id"}, "5005",
 }, {
-	"/1/topping/2/type", "Sugar",
+	jseq.Pointer{1, "topping", 2, "type"}, "Sugar",
 }, {
-	"/1/topping/2", map[string]any{
+	jseq.Pointer{1, "topping", 2}, map[string]any{
 		"id":   "5005",
 		"type": "Sugar",
 	},
 }, {
-	"/1/topping/3/id", "5003",
+	jseq.Pointer{1, "topping", 3, "id"}, "5003",
 }, {
-	"/1/topping/3/type", "Chocolate",
+	jseq.Pointer{1, "topping", 3, "type"}, "Chocolate",
 }, {
-	"/1/topping/3", map[string]any{
+	jseq.Pointer{1, "topping", 3}, map[string]any{
 		"id":   "5003",
 		"type": "Chocolate",
 	},
 }, {
-	"/1/topping/4/id", "5004",
+	jseq.Pointer{1, "topping", 4, "id"}, "5004",
 }, {
-	"/1/topping/4/type", "Maple",
+	jseq.Pointer{1, "topping", 4, "type"}, "Maple",
 }, {
-	"/1/topping/4", map[string]any{
+	jseq.Pointer{1, "topping", 4}, map[string]any{
 		"id":   "5004",
 		"type": "Maple",
 	},
 }, {
-	"/1/topping", []any{
+	jseq.Pointer{1, "topping"}, []any{
 		map[string]any{
 			"id":   "5001",
 			"type": "None",
@@ -526,7 +554,7 @@ var expectJSON = []struct {
 		},
 	},
 }, {
-	"/1", map[string]any{
+	jseq.Pointer{1}, map[string]any{
 		"batters": map[string]any{
 			"batter": []any{
 				map[string]any{
@@ -537,7 +565,7 @@ var expectJSON = []struct {
 		},
 		"id":   "0002",
 		"name": "Raised",
-		"ppu":  0.55,
+		"ppu":  jseq.Float(0.55),
 		"topping": []any{
 			map[string]any{
 				"id":   "5001",
@@ -563,33 +591,33 @@ var expectJSON = []struct {
 		"type": "donut",
 	},
 }, {
-	"/2/id", "0003",
+	jseq.Pointer{2, "id"}, "0003",
 }, {
-	"/2/type", "donut",
+	jseq.Pointer{2, "type"}, "donut",
 }, {
-	"/2/name", "Old Fashioned",
+	jseq.Pointer{2, "name"}, "Old Fashioned",
 }, {
-	"/2/ppu", 0.55,
+	jseq.Pointer{2, "ppu"}, jseq.Float(0.55),
 }, {
-	"/2/batters/batter/0/id", "1001",
+	jseq.Pointer{2, "batters", "batter", 0, "id"}, "1001",
 }, {
-	"/2/batters/batter/0/type", "Regular",
+	jseq.Pointer{2, "batters", "batter", 0, "type"}, "Regular",
 }, {
-	"/2/batters/batter/0", map[string]any{
+	jseq.Pointer{2, "batters", "batter", 0}, map[string]any{
 		"id":   "1001",
 		"type": "Regular",
 	},
 }, {
-	"/2/batters/batter/1/id", "1002",
+	jseq.Pointer{2, "batters", "batter", 1, "id"}, "1002",
 }, {
-	"/2/batters/batter/1/type", "Chocolate",
+	jseq.Pointer{2, "batters", "batter", 1, "type"}, "Chocolate",
 }, {
-	"/2/batters/batter/1", map[string]any{
+	jseq.Pointer{2, "batters", "batter", 1}, map[string]any{
 		"id":   "1002",
 		"type": "Chocolate",
 	},
 }, {
-	"/2/batters/batter", []any{
+	jseq.Pointer{2, "batters", "batter"}, []any{
 		map[string]any{
 			"id":   "1001",
 			"type": "Regular",
@@ -600,7 +628,7 @@ var expectJSON = []struct {
 		},
 	},
 }, {
-	"/2/batters", map[string]any{
+	jseq.Pointer{2, "batters"}, map[string]any{
 		"batter": []any{
 			map[string]any{
 				"id":   "1001",
@@ -613,43 +641,43 @@ var expectJSON = []struct {
 		},
 	},
 }, {
-	"/2/topping/0/id", "5001",
+	jseq.Pointer{2, "topping", 0, "id"}, "5001",
 }, {
-	"/2/topping/0/type", "None",
+	jseq.Pointer{2, "topping", 0, "type"}, "None",
 }, {
-	"/2/topping/0", map[string]any{
+	jseq.Pointer{2, "topping", 0}, map[string]any{
 		"id":   "5001",
 		"type": "None",
 	},
 }, {
-	"/2/topping/1/id", "5002",
+	jseq.Pointer{2, "topping", 1, "id"}, "5002",
 }, {
-	"/2/topping/1/type", "Glazed",
+	jseq.Pointer{2, "topping", 1, "type"}, "Glazed",
 }, {
-	"/2/topping/1", map[string]any{
+	jseq.Pointer{2, "topping", 1}, map[string]any{
 		"id":   "5002",
 		"type": "Glazed",
 	},
 }, {
-	"/2/topping/2/id", "5003",
+	jseq.Pointer{2, "topping", 2, "id"}, "5003",
 }, {
-	"/2/topping/2/type", "Chocolate",
+	jseq.Pointer{2, "topping", 2, "type"}, "Chocolate",
 }, {
-	"/2/topping/2", map[string]any{
+	jseq.Pointer{2, "topping", 2}, map[string]any{
 		"id":   "5003",
 		"type": "Chocolate",
 	},
 }, {
-	"/2/topping/3/id", "5004",
+	jseq.Pointer{2, "topping", 3, "id"}, "5004",
 }, {
-	"/2/topping/3/type", "Maple",
+	jseq.Pointer{2, "topping", 3, "type"}, "Maple",
 }, {
-	"/2/topping/3", map[string]any{
+	jseq.Pointer{2, "topping", 3}, map[string]any{
 		"id":   "5004",
 		"type": "Maple",
 	},
 }, {
-	"/2/topping", []any{
+	jseq.Pointer{2, "topping"}, []any{
 		map[string]any{
 			"id":   "5001",
 			"type": "None",
@@ -668,7 +696,7 @@ var expectJSON = []struct {
 		},
 	},
 }, {
-	"/2", map[string]any{
+	jseq.Pointer{2}, map[string]any{
 		"batters": map[string]any{
 			"batter": []any{
 				map[string]any{
@@ -683,7 +711,7 @@ var expectJSON = []struct {
 		},
 		"id":   "0003",
 		"name": "Old Fashioned",
-		"ppu":  0.55,
+		"ppu":  jseq.Float(0.55),
 		"topping": []any{
 			map[string]any{
 				"id":   "5001",
@@ -705,7 +733,7 @@ var expectJSON = []struct {
 		"type": "donut",
 	},
 }, {
-	"", []any{
+	nil, []any{
 		map[string]any{
 			"batters": map[string]any{
 				"batter": []any{
@@ -729,7 +757,7 @@ var expectJSON = []struct {
 			},
 			"id":   "0001",
 			"name": "Cake",
-			"ppu":  0.55,
+			"ppu":  jseq.Float(0.55),
 			"topping": []any{
 				map[string]any{
 					"id":   "5001",
@@ -773,7 +801,7 @@ var expectJSON = []struct {
 			},
 			"id":   "0002",
 			"name": "Raised",
-			"ppu":  0.55,
+			"ppu":  jseq.Float(0.55),
 			"topping": []any{
 				map[string]any{
 					"id":   "5001",
@@ -813,7 +841,7 @@ var expectJSON = []struct {
 			},
 			"id":   "0003",
 			"name": "Old Fashioned",
-			"ppu":  0.55,
+			"ppu":  jseq.Float(0.55),
 			"topping": []any{
 				map[string]any{
 					"id":   "5001",

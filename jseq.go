@@ -1,6 +1,10 @@
-//go:build go1.26 || (go1.25 && goexperiment.jsonv2)
-
 // Package jseq supplies streaming parsers for JSON tokens and values.
+//
+// This package relies on encoding/json/jsontext,
+// which is new and experimental in Go 1.25
+// and expected to become standard in Go 1.26.
+// To use this package with Go 1.25 you must set GOEXPERIMENT=jsonv2.
+// For more on this, see https://go.dev/blog/jsonv2-exp#experimenting-with-jsonv2
 package jseq
 
 import (
@@ -42,7 +46,7 @@ func Tokens(r io.Reader, opts ...jsontext.Options) (iter.Seq[jsontext.Token], *e
 }
 
 // Values consumes a sequence of JSON tokens and produces a sequence of JSON values,
-// each paired with the [jsontext.Pointer] that can locate it within its top-level object.
+// each paired with the [Pointer] that can locate it within its top-level object.
 //
 // The input to this function may be supplied by a call to [Tokens].
 //
@@ -71,36 +75,20 @@ func Tokens(r io.Reader, opts ...jsontext.Options) (iter.Seq[jsontext.Token], *e
 //   - strings for strings
 //   - boolean for booleans
 //   - [Null] for null
-//
-// and, for numbers:
-//
-//   - int64, if it can represent the value without loss of precision; otherwise
-//   - uint64, if that can; otherwise
-//   - float64.
-//
-// Alternatively, if the [StringNum] option is used,
-// numbers are represented using the [Number] type,
-// which is the raw representation as encountered in the input.
+//   - [Number] for numbers
 //
 // The input may contain multiple top-level JSON values,
 // each of which will be paired with the empty pointer "".
 // If the input ends in the middle of a JSON value,
-// JSONValues produces an [io.ErrUnexpectedEOF] error.
+// Values produces an [io.ErrUnexpectedEOF] error.
 //
 // After consuming the resulting sequence,
 // the caller may check for errors by dereferencing the returned error pointer.
-func Values(tokens iter.Seq[jsontext.Token], opts ...Option) (iter.Seq2[jsontext.Pointer, any], *error) {
+func Values(tokens iter.Seq[jsontext.Token]) (iter.Seq2[Pointer, any], *error) {
 	var outerErr error
 
-	f := func(yield func(jsontext.Pointer, any) bool) {
-		var (
-			stack []any // []any for arrays, *stackMap for objs
-			conf  config
-		)
-
-		for _, opt := range opts {
-			opt(&conf)
-		}
+	f := func(yield func(Pointer, any) bool) {
+		var stack []any // []any for arrays, *stackMap for objs
 
 		for tok := range tokens {
 			var (
@@ -124,16 +112,7 @@ func Values(tokens iter.Seq[jsontext.Token], opts ...Option) (iter.Seq2[jsontext
 				val = str
 
 			case '0':
-				if conf.stringNum {
-					val = Number(tok.String())
-				} else {
-					num, err := parseNum(tok)
-					if err != nil {
-						outerErr = err
-						return
-					}
-					val = num
-				}
+				val = NewNumber(tok)
 
 			case '{':
 				stack = append(stack, &stackMap{m: make(map[string]any)})
@@ -206,18 +185,18 @@ func Values(tokens iter.Seq[jsontext.Token], opts ...Option) (iter.Seq2[jsontext
 				}
 			}
 
-			var pointer jsontext.Pointer
+			var pointer Pointer
 			for i, s := range stack {
 				switch item := s.(type) {
 				case *stackMap:
-					pointer = pointer.AppendToken(item.lastKey)
+					pointer = append(pointer, item.lastKey)
 
 				case []any:
 					idx := len(item)
 					if i == len(stack)-1 {
 						idx--
 					}
-					pointer = pointer.AppendToken(strconv.Itoa(idx))
+					pointer = append(pointer, idx)
 
 				default:
 					outerErr = fmt.Errorf("internal error: unexpected %T on stack", item)
@@ -239,18 +218,53 @@ func Values(tokens iter.Seq[jsontext.Token], opts ...Option) (iter.Seq2[jsontext
 	return f, &outerErr
 }
 
-type config struct {
-	stringNum bool
+// Pointer is the type of a JSON pointer produced by [Values].
+// It can be converted to a [jsontext.Pointer] via its Text method.
+// Object keys are represented as strings,
+// and array indexes are represented as ints.
+// This allows the caller to distinguish between an array member at position X
+// and an object member with key X,
+// which [jsontext.Pointer] cannot do.
+type Pointer []any
+
+func (p Pointer) Text() jsontext.Pointer {
+	var result jsontext.Pointer
+	for _, tok := range p {
+		switch tok := tok.(type) {
+		case string:
+			result = result.AppendToken(tok)
+
+		case int:
+			result = result.AppendToken(strconv.Itoa(tok))
+		}
+	}
+
+	return result
 }
 
-// Option is the type of an option that can be passed to [Values].
-type Option func(*config)
+// Locate locates the element within val represented by p.
+func (p Pointer) Locate(val any) (any, error) {
+	if len(p) == 0 {
+		return val, nil
+	}
+	switch first := p[0].(type) {
+	case string:
+		if m, ok := val.(map[string]any); ok {
+			return p[1:].Locate(m[first])
+		}
+		return nil, fmt.Errorf("type mismatch: non-object %T for key %q", val, first)
 
-// StringNum is an [Option] that causes [Values] to produce values of type [Number]
-// when encountering JSON numbers, rather than parse them as int64/uint64/float64.
-func StringNum(enable bool) Option {
-	return func(c *config) {
-		c.stringNum = enable
+	case int:
+		if a, ok := val.([]any); ok {
+			if first >= 0 && first < len(a) {
+				return p[1:].Locate(a[first])
+			}
+			return nil, fmt.Errorf("array index %d out of bounds", first)
+		}
+		return nil, fmt.Errorf("type mismatch: non-array %T for index %d", val, first)
+
+	default:
+		return nil, fmt.Errorf("unexpected %T in Pointer", first)
 	}
 }
 
@@ -259,43 +273,68 @@ type (
 	Null struct{}
 
 	// Number is the type of a JSON number if the [StringNum] option is used.
-	Number string
+	Number struct {
+		raw string
+		f   float64
+		i   *int64
+		u   *uint64
+	}
 )
+
+func (n Number) Int() (int64, bool) {
+	if n.i == nil {
+		return 0, false
+	}
+	return *n.i, true
+}
+
+func (n Number) Uint() (uint64, bool) {
+	if n.u == nil {
+		return 0, false
+	}
+	return *n.u, true
+}
+
+func (n Number) Float() float64 {
+	return n.f
+}
+
+func Int(n int64) Number {
+	return NewNumber(jsontext.Int(n))
+}
+
+func Uint(n uint64) Number {
+	return NewNumber(jsontext.Uint(n))
+}
+
+func Float(n float64) Number {
+	return NewNumber(jsontext.Float(n))
+}
+
+func NewNumber(tok jsontext.Token) Number {
+	f := tok.Float()
+	result := Number{raw: tok.String(), f: f}
+	if !math.IsNaN(f) && !math.IsInf(f, 0) {
+		if r := math.Round(f); r == f {
+			if f >= math.MinInt64 && f <= math.MaxInt64 {
+				i := int64(f)
+				result.i = &i
+			}
+			if f >= 0 && f <= math.MaxUint64 {
+				u := uint64(f)
+				result.u = &u
+			}
+		}
+	}
+	return result
+}
+
+func (n Number) String() string {
+	return n.raw
+}
 
 type stackMap struct {
 	m       map[string]any
 	nextKey *string // when nil, obj is awaiting a key, otherwise obj is awaiting a value (or a close brace)
 	lastKey string  // last key to receive a value
-}
-
-// Returns an int64 if possible, otherwise a uint64 if possible, otherwise a float64.
-func parseNum(tok jsontext.Token) (_ any, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if e, ok := r.(error); ok {
-				err = fmt.Errorf("getting float value of JSON token: %w", e)
-			} else {
-				err = fmt.Errorf("getting float value of JSON token: %v", r)
-			}
-		}
-	}()
-
-	f := tok.Float()
-	if math.IsNaN(f) || math.IsInf(f, 0) {
-		return f, nil
-	}
-
-	if r := math.Round(f); r != f {
-		return f, nil
-	}
-
-	if f >= math.MinInt && f <= math.MaxInt {
-		return tok.Int(), nil
-	}
-
-	if f >= 0 && f <= math.MaxUint {
-		return tok.Uint(), nil
-	}
-
-	return f, nil
 }
