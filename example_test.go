@@ -9,7 +9,7 @@ import (
 )
 
 func Example() {
-	r := strings.NewReader(example_input)
+	r := strings.NewReader(`{"hello": [1, 2]} {"world": [3, 4]}`)
 	tokens, errptr1 := jseq.Tokens(r)
 	values, errptr2 := jseq.Values(tokens)
 	for pointer, value := range values {
@@ -29,5 +29,3 @@ func Example() {
 	// "/world": [3 4]
 	// "": map[world:[3 4]]
 }
-
-var example_input = `{"hello": [1, 2]} {"world": [3, 4]}`

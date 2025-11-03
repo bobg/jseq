@@ -227,6 +227,7 @@ func Values(tokens iter.Seq[jsontext.Token]) (iter.Seq2[Pointer, any], *error) {
 // which [jsontext.Pointer] cannot do.
 type Pointer []any
 
+// Text converts p to a [jsontext.Pointer].
 func (p Pointer) Text() jsontext.Pointer {
 	var result jsontext.Pointer
 	for _, tok := range p {
@@ -281,6 +282,8 @@ type (
 	}
 )
 
+// Int returns the number’s int64 value, if possible.
+// The boolean result indicates whether n can accurately be represented as an int64.
 func (n Number) Int() (int64, bool) {
 	if n.i == nil {
 		return 0, false
@@ -288,6 +291,8 @@ func (n Number) Int() (int64, bool) {
 	return *n.i, true
 }
 
+// Uint returns the number’s uint64 value, if possible.
+// The boolean result indicates whether n can accurately be represented as a uint64.
 func (n Number) Uint() (uint64, bool) {
 	if n.u == nil {
 		return 0, false
@@ -295,22 +300,28 @@ func (n Number) Uint() (uint64, bool) {
 	return *n.u, true
 }
 
+// Float returns the number’s float64 value.
 func (n Number) Float() float64 {
 	return n.f
 }
 
+// Int produces a new [Number] from an int64 value.
 func Int(n int64) Number {
 	return NewNumber(jsontext.Int(n))
 }
 
+// Uint produces a new [Number] from a uint64 value.
 func Uint(n uint64) Number {
 	return NewNumber(jsontext.Uint(n))
 }
 
+// Float produces a new [Number] from a float64 value.
 func Float(n float64) Number {
 	return NewNumber(jsontext.Float(n))
 }
 
+// NewNumber produces a new [Number] from a [jsontext.Token].
+// The input must have [jsontext.Kind] '0' ("number").
 func NewNumber(tok jsontext.Token) Number {
 	f := tok.Float()
 	result := Number{raw: tok.String(), f: f}
@@ -329,6 +340,7 @@ func NewNumber(tok jsontext.Token) Number {
 	return result
 }
 
+// String returns the number’s raw JSON representation.
 func (n Number) String() string {
 	return n.raw
 }
