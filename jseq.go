@@ -273,7 +273,7 @@ type (
 	// Null is the type of a JSON "null" value.
 	Null struct{}
 
-	// Number is the type of a JSON number if the [StringNum] option is used.
+	// Number is the type of a JSON number.
 	Number struct {
 		raw string
 		f   float64
