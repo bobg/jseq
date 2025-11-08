@@ -9,12 +9,14 @@ package jseq
 
 import (
 	"encoding/json/jsontext"
-	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"math"
 	"strconv"
+
+	"github.com/bobg/errors"
+	"github.com/bobg/seqs"
 )
 
 // Tokens parses JSON tokens from r and returns them as an [iter.Seq].
@@ -85,137 +87,129 @@ func Tokens(r io.Reader, opts ...jsontext.Options) (iter.Seq[jsontext.Token], *e
 // After consuming the resulting sequence,
 // the caller may check for errors by dereferencing the returned error pointer.
 func Values(tokens iter.Seq[jsontext.Token]) (iter.Seq2[Pointer, any], *error) {
-	var outerErr error
+	var err error
 
 	f := func(yield func(Pointer, any) bool) {
-		var stack []any // []any for arrays, *stackMap for objs
+		next, peek, stop := seqs.Peeker(tokens)
+		defer stop()
 
-		for tok := range tokens {
-			var (
-				kind = tok.Kind()
-				val  any
-				str  string
-			)
+		err = values(next, peek, yield)
+	}
+	return f, &err
+}
 
-			switch kind {
-			case 'n':
-				val = Null{}
-
-			case 'f':
-				val = false
-
-			case 't':
-				val = true
-
-			case '"':
-				str = tok.String()
-				val = str
-
-			case '0':
-				val = NewNumber(tok)
-
-			case '{':
-				stack = append(stack, &stackMap{m: make(map[string]any)})
-				continue
-
-			case '}':
-				if len(stack) == 0 {
-					outerErr = fmt.Errorf("unexpected close brace: stack empty")
-					return
-				}
-				top := stack[len(stack)-1]
-				sm, ok := top.(*stackMap)
-				if !ok {
-					outerErr = fmt.Errorf("unexpected close brace in non-object")
-					return
-				}
-				if sm.nextKey != nil {
-					outerErr = fmt.Errorf("unexpected close brace awaiting object key")
-					return
-				}
-				val = sm.m
-				stack = stack[:len(stack)-1]
-
-			case '[':
-				stack = append(stack, []any(nil))
-				continue
-
-			case ']':
-				if len(stack) == 0 {
-					outerErr = fmt.Errorf("unexpected close bracket: stack empty")
-					return
-				}
-				top := stack[len(stack)-1]
-				array, ok := top.([]any)
-				if !ok {
-					outerErr = fmt.Errorf("unexpected close bracket in non-array")
-					return
-				}
-				val = array
-				stack = stack[:len(stack)-1]
-
-			default:
-				outerErr = fmt.Errorf("unknown token kind '%v'", kind)
-				return
-			}
-
-			if len(stack) > 0 {
-				top := stack[len(stack)-1]
-				switch topItem := top.(type) {
-				case *stackMap:
-					if topItem.nextKey == nil {
-						if kind != '"' {
-							outerErr = fmt.Errorf("got %s token, want string", kind)
-							return
-						}
-						topItem.nextKey = &str
-						topItem.lastKey = str
-						continue
-					}
-					topItem.m[*topItem.nextKey] = val
-					topItem.nextKey = nil
-
-				case []any:
-					topItem = append(topItem, val)
-					stack[len(stack)-1] = topItem
-
-				default:
-					outerErr = fmt.Errorf("internal error: unexpected %T on the stack", top)
-					return
-				}
-			}
-
-			var pointer Pointer
-			for i, s := range stack {
-				switch item := s.(type) {
-				case *stackMap:
-					pointer = append(pointer, item.lastKey)
-
-				case []any:
-					idx := len(item)
-					if i == len(stack)-1 {
-						idx--
-					}
-					pointer = append(pointer, idx)
-
-				default:
-					outerErr = fmt.Errorf("internal error: unexpected %T on stack", item)
-					return
-				}
-			}
-
-			if !yield(pointer, val) {
-				return
-			}
+func values(next, peek func() (jsontext.Token, bool), yield func(Pointer, any) bool) error {
+	for {
+		_, ok, err := nextValue(next, peek, nil, yield)
+		if errors.Is(err, io.EOF) {
+			return nil
 		}
-
-		if len(stack) > 0 {
-			outerErr = io.ErrUnexpectedEOF
-			return
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
 		}
 	}
+}
 
-	return f, &outerErr
+func nextValue(next, peek func() (jsontext.Token, bool), pointer Pointer, yield func(Pointer, any) bool) (any, bool, error) {
+	token, ok := next()
+	if !ok {
+		return nil, false, io.EOF
+	}
+
+	kind := token.Kind()
+	switch kind {
+	case 'n':
+		ok := yield(pointer, Null{})
+		return Null{}, ok, nil
+
+	case 'f':
+		ok := yield(pointer, false)
+		return false, ok, nil
+
+	case 't':
+		ok := yield(pointer, true)
+		return true, ok, nil
+
+	case '"':
+		s := token.String()
+		ok := yield(pointer, s)
+		return s, ok, nil
+
+	case '0':
+		num := NewNumber(token)
+		ok := yield(pointer, num)
+		return num, ok, nil
+
+	case '{':
+		result := make(map[string]any)
+		for {
+			peeked, ok := peek()
+			if !ok {
+				return nil, false, io.ErrUnexpectedEOF
+			}
+			switch peeked.Kind() {
+			case '}':
+				next() // advance past close-brace
+				ok := yield(pointer, result)
+				return result, ok, nil
+
+			case '"':
+				next() // advance past key
+				key := peeked.String()
+				val, ok, err := nextValue(next, peek, append(pointer, key), yield)
+				if errors.Is(err, io.EOF) {
+					err = io.ErrUnexpectedEOF
+				}
+				if err != nil {
+					return nil, false, errors.Wrapf(err, "reading value for object key %q", key)
+				}
+				if !ok {
+					return nil, false, nil
+				}
+				result[key] = val
+
+			default:
+				return nil, false, fmt.Errorf("unexpected %s token reading object key, want string", peeked.Kind())
+			}
+		}
+
+	case '}':
+		return nil, false, fmt.Errorf("unexpected close brace: stack empty")
+
+	case '[':
+		var result []any
+		for {
+			peeked, ok := peek()
+			if !ok {
+				return nil, false, io.ErrUnexpectedEOF
+			}
+			if peeked.Kind() == ']' {
+				next() // advance past close-bracket
+				ok := yield(pointer, result)
+				return result, ok, nil
+			}
+			val, ok, err := nextValue(next, peek, append(pointer, len(result)), yield)
+			if errors.Is(err, io.EOF) {
+				err = io.ErrUnexpectedEOF
+			}
+			if err != nil {
+				return nil, false, errors.Wrapf(err, "reading array value %d", len(result))
+			}
+			if !ok {
+				return nil, false, nil
+			}
+			result = append(result, val)
+		}
+
+	case ']':
+		return nil, false, fmt.Errorf("unexpected close bracket: stack empty")
+
+	default:
+		return nil, false, fmt.Errorf("unknown token kind '%v'", kind)
+	}
 }
 
 // Pointer is the type of a JSON pointer produced by [Values].
