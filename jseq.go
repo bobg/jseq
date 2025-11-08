@@ -338,9 +338,3 @@ func NewNumber(tok jsontext.Token) Number {
 func (n Number) String() string {
 	return n.raw
 }
-
-type stackMap struct {
-	m       map[string]any
-	nextKey *string // when nil, obj is awaiting a key, otherwise obj is awaiting a value (or a close brace)
-	lastKey string  // last key to receive a value
-}
