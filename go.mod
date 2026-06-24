@@ -1,6 +1,6 @@
 module github.com/bobg/jseq
 
-go 1.25.3
+go 1.26
 
 require (
 	github.com/bobg/errors v1.1.0

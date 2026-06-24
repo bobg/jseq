@@ -2,8 +2,8 @@
 //
 // This package relies on encoding/json/jsontext,
 // which is new and experimental in Go 1.25
-// and expected to become standard in Go 1.26.
-// To use this package with Go 1.25 you must set GOEXPERIMENT=jsonv2.
+// and expected to become standard in Go 1.27.
+// Until then, to use this package you must set GOEXPERIMENT=jsonv2.
 // For more on this, see https://go.dev/blog/jsonv2-exp#experimenting-with-jsonv2
 package jseq
 
@@ -80,7 +80,7 @@ func Tokens(r io.Reader, opts ...jsontext.Options) (iter.Seq[jsontext.Token], *e
 //   - [Number] for numbers
 //
 // The input may contain multiple top-level JSON values,
-// each of which will be paired with the empty pointer "".
+// each of which will be paired with an empty [Pointer].
 // If the input ends in the middle of a JSON value,
 // Values produces an [io.ErrUnexpectedEOF] error.
 //
@@ -139,7 +139,11 @@ func nextValue(next, peek func() (jsontext.Token, bool), pointer Pointer, yield 
 		return s, ok, nil
 
 	case '0':
-		num := NewNumber(token)
+		num, err := NewNumber(token)
+		if err != nil {
+			return nil, false, err
+		}
+
 		ok := yield(pointer, num)
 		return num, ok, nil
 
@@ -301,37 +305,68 @@ func (n Number) Float() float64 {
 
 // Int produces a new [Number] from an int64 value.
 func Int(n int64) Number {
-	return NewNumber(jsontext.Int(n))
+	var u *uint64
+	if n >= 0 {
+		u = new(uint64(n))
+	}
+
+	return Number{
+		raw: strconv.FormatInt(n, 10),
+		f:   float64(n),
+		i:   &n,
+		u:   u,
+	}
 }
 
 // Uint produces a new [Number] from a uint64 value.
 func Uint(n uint64) Number {
-	return NewNumber(jsontext.Uint(n))
+	var i *int64
+	if n <= math.MaxInt64 {
+		i = new(int64(n))
+	}
+
+	return Number{
+		raw: strconv.FormatUint(n, 10),
+		f:   float64(n),
+		i:   i,
+		u:   &n,
+	}
 }
 
 // Float produces a new [Number] from a float64 value.
 func Float(n float64) Number {
-	return NewNumber(jsontext.Float(n))
+	var (
+		i *int64
+		u *uint64
+	)
+	if !math.IsNaN(n) && !math.IsInf(n, 0) {
+		if r := math.Round(n); r == n {
+			if n >= math.MinInt64 && n <= math.MaxInt64 {
+				i = new(int64(n))
+			}
+			if n >= 0 && n <= math.MaxUint64 {
+				u = new(uint64(n))
+			}
+		}
+	}
+
+	return Number{
+		raw: strconv.FormatFloat(n, 'g', -1, 64),
+		f:   n,
+		i:   i,
+		u:   u,
+	}
 }
 
 // NewNumber produces a new [Number] from a [jsontext.Token].
 // The input must have [jsontext.Kind] '0' ("number").
-func NewNumber(tok jsontext.Token) Number {
-	f := tok.Float()
-	result := Number{raw: tok.String(), f: f}
-	if !math.IsNaN(f) && !math.IsInf(f, 0) {
-		if r := math.Round(f); r == f {
-			if f >= math.MinInt64 && f <= math.MaxInt64 {
-				i := int64(f)
-				result.i = &i
-			}
-			if f >= 0 && f <= math.MaxUint64 {
-				u := uint64(f)
-				result.u = &u
-			}
-		}
+func NewNumber(tok jsontext.Token) (Number, error) {
+	f, err := tok.Float()
+	if err != nil {
+		return Number{}, errors.Wrapf(err, "parsing number %q", tok.String())
 	}
-	return result
+
+	return Float(f), nil
 }
 
 // String returns the number’s raw JSON representation.
