@@ -5,13 +5,6 @@
 
 This is jseq, a streaming JSON parser.
 
-It relies on the `encoding/json/jsontext` package in the Go standard library,
-which in Go 1.25 (the latest version as of this writing) is still experimental.
-To enable it, you must build with the environment variable `GOEXPERIMENT` set to `jsonv2`.
-This package is expected to become a fully fledged part of the stdlib in Go 1.27,
-at which point setting `GOEXPERIMENT` will not be necessary.
-For more details, please see [A new experimental Go API for JSON](https://go.dev/blog/jsonv2-exp).
-
 The main function in this package, `Values`,
 produces JSON values from its input as soon as they are encountered.
 This means, for example,

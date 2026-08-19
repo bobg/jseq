@@ -1,10 +1,4 @@
 // Package jseq supplies streaming parsers for JSON tokens and values.
-//
-// This package relies on encoding/json/jsontext,
-// which is new and experimental in Go 1.25
-// and expected to become standard in Go 1.27.
-// Until then, to use this package you must set GOEXPERIMENT=jsonv2.
-// For more on this, see https://go.dev/blog/jsonv2-exp#experimenting-with-jsonv2
 package jseq
 
 import (
