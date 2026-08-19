@@ -99,7 +99,7 @@ func values(next, peek func() (jsontext.Token, bool), yield func(Pointer, any) b
 			return nil
 		}
 		if err != nil {
-			return err
+			return errors.Wrap(err, "reading next JSON value from token stream")
 		}
 		if !ok {
 			return nil
@@ -135,7 +135,7 @@ func nextValue(next, peek func() (jsontext.Token, bool), pointer Pointer, yield 
 	case '0':
 		num, err := NewNumber(token)
 		if err != nil {
-			return nil, false, err
+			return nil, false, errors.Wrapf(err, "parsing number %q", token.String())
 		}
 
 		ok := yield(pointer, num)

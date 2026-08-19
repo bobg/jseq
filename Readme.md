@@ -2,6 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bobg/jseq.svg)](https://pkg.go.dev/github.com/bobg/jseq)
 [![Tests](https://github.com/bobg/jseq/actions/workflows/go.yml/badge.svg)](https://github.com/bobg/jseq/actions/workflows/go.yml)
+[![Coverage Status](https://coveralls.io/repos/github/bobg/jseq/badge.svg?branch=main)](https://coveralls.io/github/bobg/jseq?branch=main)
 
 This is jseq, a streaming JSON parser.
 
