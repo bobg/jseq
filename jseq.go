@@ -170,12 +170,13 @@ func nextValue(next, peek func() (jsontext.Token, bool), pointer Pointer, yield 
 				result[key] = val
 
 			default:
-				return nil, false, fmt.Errorf("unexpected %s token reading object key, want string", peeked.Kind())
+				err := UnexpectedTokenKindError{Got: peeked.Kind(), Want: '"'}
+				return nil, false, errors.Wrap(err, "reading object key")
 			}
 		}
 
 	case '}':
-		return nil, false, fmt.Errorf("unexpected close brace: stack empty")
+		return nil, false, ErrUnexpectedCloseBrace
 
 	case '[':
 		var result []any
@@ -203,7 +204,7 @@ func nextValue(next, peek func() (jsontext.Token, bool), pointer Pointer, yield 
 		}
 
 	case ']':
-		return nil, false, fmt.Errorf("unexpected close bracket: stack empty")
+		return nil, false, ErrUnexpectedCloseBracket
 
 	default:
 		return nil, false, fmt.Errorf("unknown token kind '%v'", kind)
@@ -252,19 +253,19 @@ func (p Pointer) Locate(val any) (any, error) {
 		if m, ok := val.(map[string]any); ok {
 			return p[1:].Locate(m[first])
 		}
-		return nil, fmt.Errorf("type mismatch: non-object %T for key %q", val, first)
+		return nil, NonObjectError{Val: val, Key: first}
 
 	case int:
 		if a, ok := val.([]any); ok {
 			if first >= 0 && first < len(a) {
 				return p[1:].Locate(a[first])
 			}
-			return nil, fmt.Errorf("array index %d out of bounds", first)
+			return nil, BoundsError{Index: first}
 		}
-		return nil, fmt.Errorf("type mismatch: non-array %T for index %d", val, first)
+		return nil, NonArrayError{Val: val, Index: first}
 
 	default:
-		return nil, fmt.Errorf("unexpected %T in Pointer", first)
+		return nil, BadPointerElementError{Val: first}
 	}
 }
 

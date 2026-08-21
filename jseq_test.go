@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/json/jsontext"
-	"errors"
+	"io"
+	"math"
 	"os"
-
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/bobg/errors"
 	"github.com/bobg/jseq"
 )
 
@@ -895,3 +898,376 @@ var expectJSON = []struct {
 		},
 	},
 }}
+
+type errReader struct {
+	err error
+}
+
+func (r errReader) Read(p []byte) (int, error) {
+	return 0, r.err
+}
+
+func TestTokensErrors(t *testing.T) {
+	t.Run("read error", func(t *testing.T) {
+		r := errReader{err: errors.New("read fail")}
+		toks, errptr := jseq.Tokens(r)
+		for range toks {
+		}
+		if *errptr == nil {
+			t.Error("expected error, got nil")
+		}
+	})
+
+	t.Run("early yield", func(t *testing.T) {
+		r := strings.NewReader(`"hello" "world"`)
+		toks, errptr := jseq.Tokens(r)
+		for range toks {
+			break
+		}
+		if err := *errptr; err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestValuesErrorsAndEdgeCases(t *testing.T) {
+	t.Run("unclosed object", func(t *testing.T) {
+		toks, errptr1 := jseq.Tokens(strings.NewReader("{"))
+		vals, errptr2 := jseq.Values(toks)
+		for range vals {
+		}
+		err := errors.Join(*errptr1, *errptr2)
+		if err == nil || !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Errorf("got error %v, want %v", err, io.ErrUnexpectedEOF)
+		}
+	})
+
+	t.Run("object key missing value", func(t *testing.T) {
+		toks, errptr1 := jseq.Tokens(strings.NewReader(`{"key":`))
+		vals, errptr2 := jseq.Values(toks)
+		for range vals {
+		}
+		err := errors.Join(*errptr1, *errptr2)
+		if err == nil || !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Errorf("got error %v, want %v", err, io.ErrUnexpectedEOF)
+		}
+	})
+
+	t.Run("unexpected token for object key", func(t *testing.T) {
+		seq := func(yield func(jsontext.Token) bool) {
+			if yield(jsontext.BeginObject) {
+				yield(jsontext.Int(123))
+			}
+		}
+		vals, errptr := jseq.Values(seq)
+		for range vals {
+		}
+		if *errptr == nil {
+			t.Fatal("expected error, got nil")
+		}
+		err, ok := errors.AsType[jseq.UnexpectedTokenKindError](*errptr)
+		if !ok {
+			t.Errorf("got error %v (%T), want jseq.UnexpectedTokenKindError", *errptr, *errptr)
+		} else if err.Got != '0' || err.Want != '"' {
+			t.Errorf("got UnexpectedTokenKindError{Got: %v, Want: %v}, want Got: '0', Want: '\"'", err.Got, err.Want)
+		}
+	})
+
+	t.Run("unexpected close brace", func(t *testing.T) {
+		seq := func(yield func(jsontext.Token) bool) {
+			yield(jsontext.EndObject)
+		}
+		vals, errptr := jseq.Values(seq)
+		for range vals {
+		}
+		if *errptr == nil || !errors.Is(*errptr, jseq.ErrUnexpectedCloseBrace) {
+			t.Errorf("got error %v, want %v", *errptr, jseq.ErrUnexpectedCloseBrace)
+		}
+	})
+
+	t.Run("unclosed array", func(t *testing.T) {
+		toks, errptr1 := jseq.Tokens(strings.NewReader("["))
+		vals, errptr2 := jseq.Values(toks)
+		for range vals {
+		}
+		err := errors.Join(*errptr1, *errptr2)
+		if err == nil || !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Errorf("got error %v, want %v", err, io.ErrUnexpectedEOF)
+		}
+	})
+
+	t.Run("array element missing", func(t *testing.T) {
+		toks, errptr1 := jseq.Tokens(strings.NewReader("[ 1,"))
+		vals, errptr2 := jseq.Values(toks)
+		for range vals {
+		}
+		err := errors.Join(*errptr1, *errptr2)
+		if err == nil || !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Errorf("got error %v, want %v", err, io.ErrUnexpectedEOF)
+		}
+	})
+
+	t.Run("unexpected close bracket", func(t *testing.T) {
+		seq := func(yield func(jsontext.Token) bool) {
+			yield(jsontext.EndArray)
+		}
+		vals, errptr := jseq.Values(seq)
+		for range vals {
+		}
+		if *errptr == nil || !errors.Is(*errptr, jseq.ErrUnexpectedCloseBracket) {
+			t.Errorf("got error %v, want %v", *errptr, jseq.ErrUnexpectedCloseBracket)
+		}
+	})
+
+	t.Run("nested object error", func(t *testing.T) {
+		seq := func(yield func(jsontext.Token) bool) {
+			if yield(jsontext.BeginObject) && yield(jsontext.String("a")) {
+				yield(jsontext.EndObject)
+			}
+		}
+		vals, errptr := jseq.Values(seq)
+		for range vals {
+		}
+		if *errptr == nil || !errors.Is(*errptr, jseq.ErrUnexpectedCloseBrace) {
+			t.Errorf("got error %v, want %v", *errptr, jseq.ErrUnexpectedCloseBrace)
+		}
+	})
+
+	t.Run("nested array error", func(t *testing.T) {
+		seq := func(yield func(jsontext.Token) bool) {
+			if yield(jsontext.BeginArray) {
+				yield(jsontext.EndObject)
+			}
+		}
+		vals, errptr := jseq.Values(seq)
+		for range vals {
+		}
+		if *errptr == nil || !errors.Is(*errptr, jseq.ErrUnexpectedCloseBrace) {
+			t.Errorf("got error %v, want %v", *errptr, jseq.ErrUnexpectedCloseBrace)
+		}
+	})
+
+	t.Run("array element EOF conversion", func(t *testing.T) {
+		peekCount := 0
+		seq := func(yield func(jsontext.Token) bool) {
+			yield(jsontext.BeginArray)
+			peekCount++
+			if peekCount == 1 {
+				yield(jsontext.BeginObject)
+			}
+		}
+		vals, errptr := jseq.Values(seq)
+		for range vals {
+		}
+		if *errptr == nil || !errors.Is(*errptr, io.ErrUnexpectedEOF) {
+			t.Errorf("got %v, want io.ErrUnexpectedEOF", *errptr)
+		}
+	})
+
+	t.Run("number parse error", func(t *testing.T) {
+		bigExp := "1e" + strings.Repeat("9", 1000)
+		toks, errptr1 := jseq.Tokens(strings.NewReader(bigExp))
+		vals, errptr2 := jseq.Values(toks)
+		for range vals {
+		}
+		err := errors.Join(*errptr1, *errptr2)
+		if err == nil || (!errors.Is(err, strconv.ErrSyntax) && !errors.Is(err, strconv.ErrRange)) {
+			t.Errorf("got %v, want strconv error", err)
+		}
+	})
+
+	t.Run("early yield in values object", func(t *testing.T) {
+		toks, errptr1 := jseq.Tokens(strings.NewReader(`{"a": 1, "b": 2}`))
+		vals, errptr2 := jseq.Values(toks)
+		for range vals {
+			break
+		}
+		if err := errors.Join(*errptr1, *errptr2); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("early yield in values array", func(t *testing.T) {
+		toks, errptr1 := jseq.Tokens(strings.NewReader(`[1, 2, 3]`))
+		vals, errptr2 := jseq.Values(toks)
+		for range vals {
+			break
+		}
+		if err := errors.Join(*errptr1, *errptr2); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("unknown token kind", func(t *testing.T) {
+		badSeq := func(yield func(jsontext.Token) bool) {
+			yield(jsontext.Token{})
+		}
+		vals, errptr := jseq.Values(badSeq)
+		for range vals {
+		}
+		if *errptr == nil {
+			t.Error("expected error for unknown token kind, got nil")
+		}
+	})
+}
+
+func TestPointerLocateErrors(t *testing.T) {
+	t.Run("key on non-object", func(t *testing.T) {
+		p := jseq.Pointer{"key"}
+		_, err := p.Locate(123)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		errVal, ok := errors.AsType[jseq.NonObjectError](err)
+		if !ok {
+			t.Errorf("got error %v (%T), want jseq.NonObjectError", err, err)
+		} else if errVal.Key != "key" || errVal.Val != 123 {
+			t.Errorf("got NonObjectError{Val: %v, Key: %q}, want Val: 123, Key: \"key\"", errVal.Val, errVal.Key)
+		}
+	})
+
+	t.Run("index on non-array", func(t *testing.T) {
+		p := jseq.Pointer{0}
+		_, err := p.Locate("hello")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		errVal, ok := errors.AsType[jseq.NonArrayError](err)
+		if !ok {
+			t.Errorf("got error %v (%T), want jseq.NonArrayError", err, err)
+		} else if errVal.Index != 0 || errVal.Val != "hello" {
+			t.Errorf("got NonArrayError{Val: %v, Index: %d}, want Val: \"hello\", Index: 0", errVal.Val, errVal.Index)
+		}
+	})
+
+	t.Run("array index negative out of bounds", func(t *testing.T) {
+		p := jseq.Pointer{-1}
+		_, err := p.Locate([]any{1, 2})
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		errVal, ok := errors.AsType[jseq.BoundsError](err)
+		if !ok {
+			t.Errorf("got error %v (%T), want jseq.BoundsError", err, err)
+		} else if errVal.Index != -1 {
+			t.Errorf("got BoundsError{Index: %d}, want Index: -1", errVal.Index)
+		}
+	})
+
+	t.Run("array index past end out of bounds", func(t *testing.T) {
+		p := jseq.Pointer{5}
+		_, err := p.Locate([]any{1, 2})
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		errVal, ok := errors.AsType[jseq.BoundsError](err)
+		if !ok {
+			t.Errorf("got error %v (%T), want jseq.BoundsError", err, err)
+		} else if errVal.Index != 5 {
+			t.Errorf("got BoundsError{Index: %d}, want Index: 5", errVal.Index)
+		}
+	})
+
+	t.Run("unexpected type in pointer", func(t *testing.T) {
+		p := jseq.Pointer{struct{}{}}
+		_, err := p.Locate([]any{1, 2})
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		errVal, ok := errors.AsType[jseq.BadPointerElementError](err)
+		if !ok {
+			t.Errorf("got error %v (%T), want jseq.BadPointerElementError", err, err)
+		} else if errVal.Val != (struct{}{}) {
+			t.Errorf("got BadPointerElementError{Val: %v}, want struct{}{}", errVal.Val)
+		}
+	})
+}
+
+func TestNumber(t *testing.T) {
+	t.Run("Int", func(t *testing.T) {
+		n1 := jseq.Int(42)
+		val, ok := n1.Int()
+		if !ok || val != 42 {
+			t.Errorf("got (%v, %v), want (42, true)", val, ok)
+		}
+		uval, uok := n1.Uint()
+		if !uok || uval != 42 {
+			t.Errorf("got (%v, %v), want (42, true)", uval, uok)
+		}
+		if f := n1.Float(); f != 42.0 {
+			t.Errorf("got %v, want 42.0", f)
+		}
+		if s := n1.String(); s != "42" {
+			t.Errorf("got %q, want \"42\"", s)
+		}
+
+		n2 := jseq.Int(-42)
+		_, uok2 := n2.Uint()
+		if uok2 {
+			t.Error("expected Uint() to return false for negative Int")
+		}
+	})
+
+	t.Run("Uint", func(t *testing.T) {
+		n1 := jseq.Uint(100)
+		val, ok := n1.Uint()
+		if !ok || val != 100 {
+			t.Errorf("got (%v, %v), want (100, true)", val, ok)
+		}
+		ival, iok := n1.Int()
+		if !iok || ival != 100 {
+			t.Errorf("got (%v, %v), want (100, true)", ival, iok)
+		}
+
+		n2 := jseq.Uint(math.MaxUint64)
+		_, iok2 := n2.Int()
+		if iok2 {
+			t.Error("expected Int() to return false for uint64 > MaxInt64")
+		}
+		uval2, uok2 := n2.Uint()
+		if !uok2 || uval2 != math.MaxUint64 {
+			t.Errorf("got (%v, %v), want (%v, true)", uval2, uok2, uint64(math.MaxUint64))
+		}
+	})
+
+	t.Run("Float", func(t *testing.T) {
+		n1 := jseq.Float(3.14)
+		if f := n1.Float(); f != 3.14 {
+			t.Errorf("got %v, want 3.14", f)
+		}
+		if _, ok := n1.Int(); ok {
+			t.Error("expected Int() to return false for float 3.14")
+		}
+		if _, ok := n1.Uint(); ok {
+			t.Error("expected Uint() to return false for float 3.14")
+		}
+
+		n2 := jseq.Float(-10.0)
+		if ival, ok := n2.Int(); !ok || ival != -10 {
+			t.Errorf("got (%v, %v), want (-10, true)", ival, ok)
+		}
+		if _, ok := n2.Uint(); ok {
+			t.Error("expected Uint() to return false for negative float")
+		}
+
+		n3 := jseq.Float(math.NaN())
+		if _, ok := n3.Int(); ok {
+			t.Error("expected Int() to return false for NaN")
+		}
+		n4 := jseq.Float(math.Inf(1))
+		if _, ok := n4.Int(); ok {
+			t.Error("expected Int() to return false for Inf")
+		}
+	})
+
+	t.Run("NewNumber valid token", func(t *testing.T) {
+		tok := jsontext.Int(123)
+		num, err := jseq.NewNumber(tok)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if v, ok := num.Int(); !ok || v != 123 {
+			t.Errorf("got (%v, %v), want (123, true)", v, ok)
+		}
+	})
+}
