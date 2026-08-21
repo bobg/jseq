@@ -1,6 +1,8 @@
 package jseq_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"encoding/json/jsontext"
 	"errors"
 	"os"
@@ -81,6 +83,35 @@ func TestPointer(t *testing.T) {
 	}
 	if got != "buongiorno" {
 		t.Errorf("got %v, want buongiorno", got)
+	}
+}
+
+func TestPointerEncoding(t *testing.T) {
+	m := map[string]any{"a~b": 1, "c/d": 2, "e f": 3, "gh": 4}
+	j, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := bytes.NewReader(j)
+
+	want := []jsontext.Pointer{"/a~0b", "/c~1d", "/e f", "/gh", ""}
+
+	toks, errptr1 := jseq.Tokens(r)
+	pairs, errptr2 := jseq.Values(toks)
+	var n int
+	for pointer := range pairs {
+		w := want[n]
+		encoded := pointer.Text()
+		if encoded != w {
+			t.Errorf("got pointer %q, want %q", encoded, w)
+		}
+		n++
+	}
+	if err := *errptr1; err != nil {
+		t.Fatal(err)
+	}
+	if err := *errptr2; err != nil {
+		t.Fatal(err)
 	}
 }
 

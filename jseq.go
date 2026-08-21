@@ -211,12 +211,19 @@ func nextValue(next, peek func() (jsontext.Token, bool), pointer Pointer, yield 
 }
 
 // Pointer is the type of a JSON pointer produced by [Values].
-// It can be converted to a [jsontext.Pointer] via its Text method.
-// Object keys are represented as strings,
-// and array indexes are represented as ints.
-// This allows the caller to distinguish between an array member at position X
-// and an object member with key X,
-// which [jsontext.Pointer] cannot do.
+// A JSON pointer is an index into a JSON document
+// that uniquely identifies a specific value the document contains.
+// It’s represented as a slice of tokens,
+// where each token is either a string (for an object key)
+// or an int (for an array index).
+//
+// A Pointer can be converted to a [jsontext.Pointer] via its Text method.
+// There are two differences between a Pointer and a jsontext.Pointer:
+//
+//  1. A Pointer can distinguish between an array index and an object key that happen to have the same string representation; a jsontext.Pointer cannot.
+//  2. A Pointer does not perform any escaping of special characters in object keys (as required by [RFC 6901]); a jsontext.Pointer does.
+//
+// [RFC 6901]: https://www.rfc-editor.org/rfc/rfc6901.html
 type Pointer []any
 
 // Text converts p to a [jsontext.Pointer].
